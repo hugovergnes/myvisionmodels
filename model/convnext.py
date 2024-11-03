@@ -60,39 +60,35 @@ class ConvNeXtBlock(nn.Module):
     There are two equivalent implementations:
       (1) DwConv -> LayerNorm (channels_first) -> 1x1 Conv -> GELU -> 1x1 Conv; all in (N, C, H, W)
       (2) DwConv -> Permute to (N, H, W, C); LayerNorm (channels_last) -> Linear -> GELU -> Linear; Permute back
-
-    Unlike the official impl, this one allows choice of 1 or 2, 1x1 conv can be faster with appropriate
-    choice of LayerNorm impl, however as model size increases the tradeoffs appear to change and nn.Linear
-    is a better choice. This was observed with PyTorch 1.10 on 3090 GPU, it could change over time & w/ different HW.
     """
 
     def __init__(
         self,
-        in_chs: int,
-        out_chs: Optional[int] = None,
-        kernel_size: int = 7,
-        stride: int = 1,
-        dilation: Union[int, Tuple[int, int]] = (1, 1),
-        mlp_ratio: float = 4,
-        conv_bias: bool = True,
-        ls_init_value: Optional[float] = 1e-6,
-        act_layer: Union[str, Callable] = "gelu",
-        norm_layer: Optional[Callable] = None,
-        drop_path: float = 0.0,
+        in_chs,
+        out_chs=None,
+        kernel_size=7,
+        stride=1,
+        dilation=(1, 1),
+        mlp_ratio=4,
+        conv_bias=True,
+        ls_init_value=1e-6,
+        act_layer="gelu",
+        norm_layer=None,
+        drop_path=0.0,
     ):
         """
         Args:
-            in_chs: Block input channels.
-            out_chs: Block output channels (same as in_chs if None).
-            kernel_size: Depthwise convolution kernel size.
-            stride: Stride of depthwise convolution.
-            dilation: Tuple specifying input and output dilation of block.
-            mlp_ratio: MLP expansion ratio.
-            conv_bias: Apply bias for all convolution (linear) layers.
-            ls_init_value: Layer-scale init values, layer-scale applied if not None.
-            act_layer: Activation layer.
-            norm_layer: Normalization layer (defaults to LN if not specified).
-            drop_path: Stochastic depth probability.
+            in_chs (int): Block input channels.
+            out_chs (Optional[int]): Block output channels (defaults to in_chs if None).
+            kernel_size (int): Depthwise convolution kernel size.
+            stride (int): Stride of depthwise convolution.
+            dilation (Union[int, Tuple[int, int]]): Dilation configuration for block.
+            mlp_ratio (float): MLP expansion ratio.
+            conv_bias (bool): If True, apply bias to convolution layers.
+            ls_init_value (Optional[float]): Initial value for layer scaling; applies if not None.
+            act_layer (Union[str, Callable]): Activation layer.
+            norm_layer (Optional[Callable]): Normalization layer (defaults to LayerNorm if not specified).
+            drop_path (float): Dropout probability for stochastic depth.
         """
         super().__init__()
         out_chs = out_chs or in_chs
