@@ -1,6 +1,5 @@
 import dill
 from functools import partial
-from typing import Callable, Optional, Tuple, Union
 
 from model.patch_embed import PatchEmbed
 from model.layers import DropPath, efficient_drop_path  # TODO: Fix DropPath import here
