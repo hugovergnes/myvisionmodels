@@ -2,7 +2,6 @@ import dill
 from functools import partial
 
 from model.patch_embed import PatchEmbed
-from model.layers import DropPath, efficient_drop_path  # TODO: Fix DropPath import here
 
 import torch
 import torch.nn as nn
@@ -11,6 +10,7 @@ import torch.nn.functional as F
 from timm.layers import (
     trunc_normal_,
     AvgPool2dSame,
+    DropPath,
     Mlp,
     LayerNorm2d,
     LayerNorm,
@@ -119,35 +119,33 @@ class ConvNeXtBlock(nn.Module):
             self.shortcut = nn.Identity()
         self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
-    # This forward should be fast
-    # def efficient_drop_path_forward(self, x):
-    #     def residual_mlp_func(x):
-    #         x = self.norm(self.conv_dw(x).permute(0, 2, 3, 1))
-    #         x = self.mlp(x).permute(0, 3, 1, 2)
-    #         if self.gamma is not None:
-    #             x = x.mul(self.gamma.reshape(1, -1, 1, 1))
-    #         return x
-
-    #     x = self.shortcut(x) + efficient_drop_path(
-    #         x,
-    #         residual_mlp_func,
-    #         drop_ratio=(
-    #             self.drop_path.drop_prob
-    #             if isinstance(self.drop_path, DropPath)
-    #             else 0.0
-    #         ),
-    #         training=self.training,
-    #     )
-
-    # This one should be slow
     def forward(self, x):
-        shortcut = x
-        x = self.mlp(self.norm(self.conv_dw(x).permute(0, 2, 3, 1))).permute(0, 3, 1, 2)
-        if self.gamma is not None:
-            x = x.mul(self.gamma.reshape(1, -1, 1, 1))
+        if isinstance(self.drop_path, nn.Identity) or not self.training:
+            shortcut = x
+            x = self.norm(self.conv_dw(x).permute(0, 2, 3, 1))
+            x = self.mlp(x).permute(0, 3, 1, 2)
+            if self.gamma is not None:
+                x = x.mul(self.gamma.reshape(1, -1, 1, 1))
 
-        x = self.drop_path(x) + self.shortcut(shortcut)
-        return x
+            return x + self.shortcut(shortcut)
+
+        B = x.shape[0]
+        drop_prob = self.drop_path.drop_prob
+        sample_subset_size = max(int(B * (1 - drop_prob)), 1)
+        brange = (torch.randperm(B, device=x.device))[:sample_subset_size]
+        x_subset = x[brange]
+
+        residual = self.norm(self.conv_dw(x_subset).permute(0, 2, 3, 1))
+        residual = self.mlp(residual).permute(0, 3, 1, 2)
+        if self.gamma is not None:
+            residual = residual.mul(self.gamma.reshape(1, -1, 1, 1))
+
+        residual_scale_factor = 1 / (1 - drop_prob)
+
+        x_plus_residual = torch.index_add(
+            x, 0, brange, residual.to(dtype=x.dtype), alpha=residual_scale_factor
+        )
+        return x_plus_residual
 
 
 class ConvNeXtStage(nn.Module):
