@@ -5,6 +5,7 @@ from model.convnext import ConvNextTiny, ConvNextSmall, ConvNextBase
 from model.inception import InceptionNextTiny, InceptionNextSmall, InceptionNextBase
 
 import torch
+import torch.nn as nn
 
 
 def count_trainable_parameters(model):
@@ -12,7 +13,7 @@ def count_trainable_parameters(model):
 
 
 if __name__ == "__main__":
-    inp = torch.randn(3, 1, 224, 224)
+    inp = torch.randn(3, 1, 1280, 768)
     model = ConvNextBase(
         in_chans=1,
         num_classes=2,
@@ -27,8 +28,27 @@ if __name__ == "__main__":
     #     weights="/Users/hugovergnes/Documents/checkoints/inception_next/inceptionnext_tiny.pth",
     # )
     # model = MetaNeXt(in_chans=1, num_classes=2)
-    out = model(inp)
-    out = out["model_output"]
+    out_features = model.forward_features(inp)
+
+    pool = nn.AdaptiveAvgPool2d((10, 6))
+    out_features = pool(out_features)
+
+    out_features = out_features.view(3, 1024, -1)
+    seq_len, feature_dim, flattened_dim = out_features.shape
+    lstm = nn.LSTM(
+        input_size=1024,
+        hidden_size=512,
+        num_layers=1,
+        batch_first=True,
+        bidirectional=True,
+    )
+    lstm_input = out_features.permute(0, 1, 2).reshape(seq_len, 1, -1)
+
+    output, (hn, cn) = lstm(lstm_input)
+
+    print(output.shape)  # Output shape: (seq_len, batch, hidden_size)
+
+    # out = out["model_output"]
     # print(f"done, out shape {out.shape}")
 
     n_param = count_trainable_parameters(model)
